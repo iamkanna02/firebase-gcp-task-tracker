@@ -1,0 +1,5 @@
+.firebase/
+*-debug.log
+service-account*.json
+*.key.json
+.env
