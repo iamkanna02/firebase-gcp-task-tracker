@@ -1,0 +1,58 @@
+rules_version = '2';
+
+// Cloud Task Tracker — Firestore security rules
+//
+// Access model:
+//   - Every visitor signs in anonymously (Firebase Authentication).
+//   - A user can only read and write documents under users/{their uid}/tasks.
+//   - Every write is validated: allowed fields only, correct types, size limits.
+//   - Anything not explicitly allowed below is denied by default.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId}/tasks/{taskId} {
+      allow read, delete: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidNewTask();
+      allow update: if isOwner(userId) && isValidTaskUpdate();
+    }
+
+    // ---------- Helper functions ----------
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function taskFields() {
+      return ['title', 'description', 'status', 'createdAt', 'updatedAt'];
+    }
+
+    function hasValidValues(data) {
+      return data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 100
+        && data.description is string
+        && data.description.size() <= 500
+        && data.status in ['todo', 'in-progress', 'done']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidNewTask() {
+      let data = request.resource.data;
+      return data.keys().hasAll(taskFields())
+        && data.keys().hasOnly(taskFields())
+        && data.status == 'todo'
+        && hasValidValues(data);
+    }
+
+    function isValidTaskUpdate() {
+      let data = request.resource.data;
+      return data.keys().hasOnly(taskFields())
+        // createdAt can never be changed after creation
+        && data.diff(resource.data).affectedKeys()
+             .hasOnly(['title', 'description', 'status', 'updatedAt'])
+        && hasValidValues(data);
+    }
+  }
+}
